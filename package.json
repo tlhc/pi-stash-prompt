@@ -1,0 +1,38 @@
+{
+  "name": "pi-stash-prompt",
+  "version": "1.0.0",
+  "description": "Ctrl+S stash prompt for pi",
+  "type": "module",
+  "license": "MIT",
+  "author": "tlhc",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tlhc/pi-stash-prompt.git"
+  },
+  "homepage": "https://github.com/tlhc/pi-stash-prompt#readme",
+  "bugs": {
+    "url": "https://github.com/tlhc/pi-stash-prompt/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi-coding-agent"
+  ],
+  "files": [
+    "extensions",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/stash.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/stash.test.mjs"
+  }
+}
