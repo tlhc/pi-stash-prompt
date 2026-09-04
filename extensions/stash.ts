@@ -2,13 +2,23 @@ import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import { matchesKey } from "@earendil-works/pi-tui";
 
 export default function (pi) {
-	let stash: string | undefined;
+	const stack: string[] = [];
 
-	function putBack(ui: { setEditorText(text: string): void; setStatus(key: string, text: string | undefined): void }) {
-		if (stash === undefined) return;
-		ui.setEditorText(stash);
-		stash = undefined;
-		ui.setStatus("stash", undefined);
+	function setStatus(ui: { setStatus(key: string, text: string | undefined): void }) {
+		ui.setStatus("stash", stack.length ? `stashed ${stack.length}` : undefined);
+	}
+
+	function popIfEmpty(
+		ui: {
+			getEditorText?(): string;
+			setEditorText(text: string): void;
+			setStatus(key: string, text: string | undefined): void;
+		},
+		current = ui.getEditorText?.() ?? "",
+	) {
+		if (stack.length === 0 || current.trim()) return;
+		ui.setEditorText(stack.pop() as string);
+		setStatus(ui);
 	}
 
 	pi.on("session_start", (_event, ctx) => {
@@ -21,12 +31,12 @@ export default function (pi) {
 				if (!matchesKey(data, "ctrl+s")) return orig(data);
 				const text = editor.getExpandedText?.() ?? editor.getText();
 				if (text.trim()) {
-					stash = text;
+					stack.push(text);
 					editor.setText("");
-					ctx.ui.setStatus("stash", "stashed");
+					setStatus(ctx.ui);
 					return;
 				}
-				putBack(ctx.ui);
+				popIfEmpty(ctx.ui, text);
 			};
 			return editor;
 		});
@@ -34,6 +44,11 @@ export default function (pi) {
 
 	pi.on("input", (event, ctx) => {
 		if (event.source !== "interactive") return;
-		putBack(ctx.ui);
+		popIfEmpty(ctx.ui);
+	});
+
+	pi.on("session_shutdown", (_event, ctx) => {
+		stack.length = 0;
+		ctx?.ui?.setStatus?.("stash", undefined);
 	});
 }

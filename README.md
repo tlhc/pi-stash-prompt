@@ -14,9 +14,10 @@ Then run `/reload` in pi.
 
 Press **Ctrl+S** while the editor is focused:
 
-- Editor has text: save it to the stash, clear the editor, show `stashed` in the footer
-- Editor is empty: put the stash back
-- After you send another normal message: the stash fills the editor on its own
+- Editor has text: push it onto a LIFO stack, clear the editor, show `stashed N` in the footer
+- Editor is empty: pop the last draft back
+- After you send another normal message: pop into the editor only if it is still empty
+- `/new` / session shutdown drops the stack
 
 In `/model`, `/thinking`, and `/resume`, Ctrl+S still saves the default model or toggles sort.
 

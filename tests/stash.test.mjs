@@ -52,6 +52,9 @@ function setup({ mode = "tui", previous } = {}) {
 			setEditorComponent(fn) {
 				factory = fn;
 			},
+			getEditorText() {
+				return editor?.getText() ?? "";
+			},
 			setEditorText(text) {
 				editor?.setText(text);
 			},
@@ -67,6 +70,9 @@ function setup({ mode = "tui", previous } = {}) {
 		status,
 		input(event) {
 			for (const fn of handlers.input ?? []) fn(event, ctx);
+		},
+		shutdown() {
+			for (const fn of handlers.session_shutdown ?? []) fn({}, ctx);
 		},
 	};
 }
@@ -85,7 +91,7 @@ test("ctrl+s stashes text and restores on empty", () => {
 	editor.setText("draft one");
 	editor.handleInput(ctrlS);
 	assert.equal(editor.getText(), "");
-	assert.equal(status.stash, "stashed");
+	assert.equal(status.stash, "stashed 1");
 	editor.handleInput(ctrlS);
 	assert.equal(editor.getText(), "draft one");
 	assert.equal(status.stash, undefined);
@@ -119,7 +125,7 @@ test("interactive input puts the stash back", () => {
 	editor.setText("keep me");
 	editor.handleInput(ctrlS);
 	assert.equal(editor.getText(), "");
-	assert.equal(status.stash, "stashed");
+	assert.equal(status.stash, "stashed 1");
 	input({ source: "interactive" });
 	assert.equal(editor.getText(), "keep me");
 	assert.equal(status.stash, undefined);
@@ -160,6 +166,27 @@ test("stashes expanded text from collapsed paste markers", () => {
 	assert.equal(inner.text, expanded);
 });
 
+test("falls back to getText when getExpandedText is missing", () => {
+	const inner = {
+		text: "plain",
+		passed: [],
+		getText() {
+			return this.text;
+		},
+		setText(t) {
+			this.text = t;
+		},
+		handleInput(d) {
+			this.passed.push(d);
+		},
+	};
+	const { editor } = setup({ previous: () => inner });
+	editor.handleInput(ctrlS);
+	assert.equal(inner.text, "");
+	editor.handleInput(ctrlS);
+	assert.equal(inner.text, "plain");
+});
+
 test("wraps a previous editor factory", () => {
 	const inner = {
 		text: "old",
@@ -180,4 +207,102 @@ test("wraps a previous editor factory", () => {
 	editor.handleInput(ctrlS);
 	assert.equal(inner.text, "");
 	assert.deepEqual(inner.passed, ["x"]);
+});
+
+test("LIFO: last stashed draft restores first", () => {
+	const { editor, status } = setup();
+	editor.setText("first");
+	editor.handleInput(ctrlS);
+	editor.setText("second");
+	editor.handleInput(ctrlS);
+	assert.equal(status.stash, "stashed 2");
+	editor.handleInput(ctrlS);
+	assert.equal(editor.getText(), "second");
+	assert.equal(status.stash, "stashed 1");
+	editor.setText("");
+	editor.handleInput(ctrlS);
+	assert.equal(editor.getText(), "first");
+	assert.equal(status.stash, undefined);
+});
+
+test("ctrl+s with text pushes instead of popping", () => {
+	const { editor } = setup();
+	editor.setText("first");
+	editor.handleInput(ctrlS);
+	editor.setText("second");
+	editor.handleInput(ctrlS);
+	editor.handleInput(ctrlS);
+	assert.equal(editor.getText(), "second");
+});
+
+test("auto-restore skips a nonempty editor", () => {
+	const { editor, input } = setup();
+	editor.setText("stashed");
+	editor.handleInput(ctrlS);
+	editor.setText("already typing");
+	input({ source: "interactive" });
+	assert.equal(editor.getText(), "already typing");
+	editor.setText("");
+	input({ source: "interactive" });
+	assert.equal(editor.getText(), "stashed");
+});
+
+test("two interactive submits pop two stacked drafts", () => {
+	const { editor, input } = setup();
+	editor.setText("a");
+	editor.handleInput(ctrlS);
+	editor.setText("b");
+	editor.handleInput(ctrlS);
+	input({ source: "interactive" });
+	assert.equal(editor.getText(), "b");
+	editor.setText("");
+	input({ source: "interactive" });
+	assert.equal(editor.getText(), "a");
+});
+
+test("session_shutdown drops the stack", () => {
+	const { editor, status, shutdown } = setup();
+	editor.setText("draft");
+	editor.handleInput(ctrlS);
+	shutdown();
+	assert.equal(status.stash, undefined);
+	editor.handleInput(ctrlS);
+	assert.equal(editor.getText(), "");
+});
+
+test("after shutdown a new stash still works", () => {
+	const { editor, shutdown } = setup();
+	editor.setText("old");
+	editor.handleInput(ctrlS);
+	shutdown();
+	editor.setText("new");
+	editor.handleInput(ctrlS);
+	editor.handleInput(ctrlS);
+	assert.equal(editor.getText(), "new");
+});
+
+test("shutdown twice is safe", () => {
+	const { editor, shutdown } = setup();
+	editor.setText("draft");
+	editor.handleInput(ctrlS);
+	shutdown();
+	shutdown();
+	editor.handleInput(ctrlS);
+	assert.equal(editor.getText(), "");
+});
+
+test("separate extension instances do not share a stack", () => {
+	const a = setup();
+	const b = setup();
+	a.editor.setText("only-a");
+	a.editor.handleInput(ctrlS);
+	b.editor.handleInput(ctrlS);
+	assert.equal(b.editor.getText(), "");
+	a.editor.handleInput(ctrlS);
+	assert.equal(a.editor.getText(), "only-a");
+});
+
+test("rpc input on an unwrapped session does not throw", () => {
+	const { input } = setup({ mode: "rpc" });
+	assert.doesNotThrow(() => input({ source: "interactive" }));
 });
